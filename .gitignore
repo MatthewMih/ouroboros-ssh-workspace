@@ -1,0 +1,18 @@
+# Python bytecode and local test/tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# The offline suite uses these temporary directories if interrupted
+.sshws-test-*/
+
+# Keep private connection material and local requests out of version control
+.env
+.env.*
+*.pem
+*.key
+id_rsa
+known_hosts
+ssh_config
+request.json
+*.sock
