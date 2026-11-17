@@ -1,7 +1,7 @@
 ---
 name: ssh_workspace
 title: SSH Workspace
-version: 0.2.2
+version: 0.2.3
 license: MIT
 type: instruction
 description: Work directly in an authorized remote POSIX workspace over OpenSSH with bounded reads, search, conflict-checked edits, safe creation, and explicit command outcomes; no project mirror or remote installation.

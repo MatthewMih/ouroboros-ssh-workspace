@@ -85,6 +85,33 @@ class WorkspaceTests(unittest.TestCase):
             read = self.runop(op='read', path=p.name, start_line=match['line'])['result']
             self.assertIn('TARGET', read['text'])
 
+    def test_lf_bounded_read_and_tail(self):
+        p = self.root/'line-boundaries.txt'
+        for ending in (b'\n', b'\r\n', b''):
+            for separator in (b'\r', b'\x0c', '\u2028'.encode('utf-8')):
+                with self.subTest(ending=ending, separator=separator):
+                    record = b'alpha' + separator + b'TARGET' + ending
+                    data = b'prefix\n' + record
+                    p.write_bytes(data)
+                    matches = self.runop(op='search', path=p.name, query='TARGET')['result']['matches']
+                    self.assertEqual([m['line'] for m in matches], [2])
+                    for position in (dict(start_line=2), dict(offset=7)):
+                        r = self.runop(op='read', path=p.name, max_lines=1, **position)['result']
+                        self.assertEqual(r['text'], record.decode('utf-8'))
+                        self.assertEqual((r['start_byte'], r['next_byte'], r['bytes_returned']),
+                                         (7, len(data), len(record)))
+                    r = self.runop(op='log-tail', path=p.name, max_lines=1)['result']
+                    self.assertEqual(r['text'], record.decode('utf-8'))
+                    self.assertEqual((r['start_byte'], r['next_byte']), (7, len(data)))
+                    r = self.runop(op='log-tail', path=p.name, max_lines=1,
+                                   max_bytes=len(record) + 2)['result']
+                    self.assertEqual(r['text'], record.decode('utf-8'))
+                    self.assertFalse(r['partial_first_line'])
+                    self.assertEqual((r['start_byte'], r['next_byte']), (7, len(data)))
+                    p.write_bytes(record)
+                    r = self.runop(op='read', path=p.name, max_lines=1)['result']
+                    self.assertEqual(r['text'], record.decode('utf-8'))
+
     def test_exec(self):
         r = self.runop(op='exec', argv=[sys.executable, '-c',
             'import sys; print(sys.argv[1]); sys.stderr.write("e"*10000); sys.exit(7)',

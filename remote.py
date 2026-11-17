@@ -2,6 +2,7 @@
 import difflib
 import base64
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -66,7 +67,7 @@ def read_file(p, req, tail=False):
             start = max(0, s.st_size - cap)
             f.seek(start)
             data = f.read(cap)
-            chunks = data.splitlines(keepends=True)
+            chunks = io.BytesIO(data).readlines()
             partial_first_line = start > 0
             if start and len(chunks) > 1:
                 chunks = chunks[1:]
@@ -98,7 +99,7 @@ def read_file(p, req, tail=False):
                 start = f.tell()
             f.seek(start)
             raw = f.read(cap)
-            data = b''.join(raw.splitlines(keepends=True)[:lines])
+            data = b''.join(io.BytesIO(raw).readlines()[:lines])
         rendered, replacement = text(data)
         end = start + len(data)
         return dict(text=rendered, sha256=digest, start_byte=start, next_byte=end,
