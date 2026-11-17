@@ -164,7 +164,9 @@ def search(p, req):
                 gaps.append('gap limit')
                 break
             continue
-        for number, line in enumerate(content.splitlines(), 1):
+        # Match read(start_line=...), whose line boundaries are LF bytes.
+        # splitlines() also treats form-feed, bare CR and Unicode separators as new lines.
+        for number, line in enumerate(content.split('\n'), 1):
             if query in line:
                 if len(matches) >= limit or output >= 32000:
                     return dict(matches=matches, scanned_files=count, complete=False,
@@ -310,7 +312,7 @@ def execute(cwd, req):
         os.set_blocking(stream.fileno(), False)
         selector.register(stream, selectors.EVENT_READ, name)
     deadline = time.monotonic() + timeout
-    timed_out, kill_attempt = False, 'not_needed'
+    timed_out, kill_attempt, kill_error = False, 'not_needed', None
     try:
         while selector.get_map():
             now = time.monotonic()
@@ -321,6 +323,9 @@ def execute(cwd, req):
                     kill_attempt = 'signal_sent'
                 except ProcessLookupError:
                     kill_attempt = 'group_not_found'
+                except OSError as error:
+                    kill_attempt = 'failed'
+                    kill_error = '%s: %s' % (type(error).__name__, error)
                 deadline = now + 2
             if timed_out and now >= deadline:
                 break  # escaped descendants may retain pipes; never wait indefinitely
@@ -343,11 +348,15 @@ def execute(cwd, req):
                 kill_attempt = 'signal_sent'
             except ProcessLookupError:
                 kill_attempt = 'group_not_found'
+            except OSError as error:
+                kill_attempt = 'failed'
+                kill_error = '%s: %s' % (type(error).__name__, error)
             try:
                 rc = proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 rc = None
         return dict(returncode=rc, timed_out=timed_out, group_stop=kill_attempt,
+                    group_stop_error=kill_error, process_exit_verified=rc is not None,
                     descendants_exit_verified=False,
                     streams={name: dict(text=text(bytes(buf))[0], bytes_observed=totals[name],
                                         shortened=totals[name] > len(buf)) for name, buf in buffers.items()})

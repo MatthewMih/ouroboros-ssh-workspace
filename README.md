@@ -3,10 +3,12 @@
 `ssh_workspace` is a small, dependency-free instruction skill and command-line
 helper for working directly in an **authorized** POSIX workspace over OpenSSH.
 It transfers a bounded standard-library Python worker over one SSH channel per
-operation; it does not mirror the project, install anything remotely, or keep a
+operation (v0.2.2); it does not mirror the project, install anything remotely, or keep a
 persistent remote shell.
 
 ## What it provides
+
+The CLI emits ASCII-escaped JSON so non-UTF-8 POSIX filenames remain safely printable. Search and read use matching 1-based LF-delimited line numbers. Timed-out exec results preserve captured output and explicitly report an unconfirmed process-group stop when applicable.
 
 - bounded file listing, reading, literal search, and log reads;
 - exclusive safe creation and SHA-256-checked targeted text edits with a

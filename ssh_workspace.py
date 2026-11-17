@@ -171,7 +171,7 @@ def main():
         reply = call(args.host, args.root, request, args.ssh_config, args.python, control_path=args.control_path)
     except (OSError, ValueError, TypeError) as error:
         reply = dict(ok=False, outcome='local_error', error=type(error).__name__, message=str(error))
-    print(json.dumps(reply, ensure_ascii=False))
+    print(json.dumps(reply, ensure_ascii=True))
     return 0 if reply.get('ok') else 1 if reply.get('outcome') == 'error' else 2
 
 

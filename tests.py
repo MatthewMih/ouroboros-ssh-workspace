@@ -1,5 +1,6 @@
 """Offline contract tests; all mutations use temporary local directories."""
 import hashlib
+import io
 import base64
 import json
 import os
@@ -16,7 +17,7 @@ import ssh_workspace as cli
 
 class WorkspaceTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='.sshws-test-', dir=str(Path(__file__).resolve().parent))
+        self.tmp = tempfile.TemporaryDirectory(prefix='.sshws-test-')
         self.root = Path(self.tmp.name)
     def tearDown(self):
         self.tmp.cleanup()
@@ -75,6 +76,15 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(len(r['matches']), 2)
         self.assertFalse(r['complete'])
         self.assertFalse(self.runop(op='read', path='long', max_bytes=True)['ok'])
+    def test_search_read_line_number_agreement(self):
+        p = self.root/'mixed-lines.txt'
+        p.write_bytes('alpha\x0cbeta\nTARGET\nlast\u2028line\rbare-cr-target'.encode('utf-8'))
+        result = self.runop(op='search', path=p.name, query='TARGET')['result']
+        self.assertEqual([m['line'] for m in result['matches']], [2])
+        for match in result['matches']:
+            read = self.runop(op='read', path=p.name, start_line=match['line'])['result']
+            self.assertIn('TARGET', read['text'])
+
     def test_exec(self):
         r = self.runop(op='exec', argv=[sys.executable, '-c',
             'import sys; print(sys.argv[1]); sys.stderr.write("e"*10000); sys.exit(7)',
@@ -86,6 +96,8 @@ class WorkspaceTests(unittest.TestCase):
         r = self.runop(op='exec', argv=[sys.executable, '-c', 'import time; time.sleep(10)'], timeout=1)['result']
         self.assertTrue(r['timed_out'])
         self.assertEqual(r['returncode'], -9)
+        self.assertTrue(r['process_exit_verified'])
+        self.assertEqual(r['group_stop'], 'signal_sent')
     def test_fake_ssh_end_to_end(self):
         fake = self.root/'fake-ssh'
         fake.write_text('#!'+sys.executable+'\nimport subprocess,sys\n'
@@ -161,6 +173,34 @@ class WorkspaceTests(unittest.TestCase):
         self.root.chmod(0o755)
         with self.assertRaises(ValueError):
             cli.ssh_command('testbox', control_path=socket)
+    def test_exec_timeout_kill_denied_preserves_observations(self):
+        def denied(pid, sig):
+            raise PermissionError('not permitted')
+        with patch.object(remote.os, 'killpg', side_effect=denied):
+            r = remote.execute(self.root, dict(argv=[sys.executable, '-c',
+                'import time; print("started", flush=True); time.sleep(3)'], timeout=1, max_bytes=100))
+        self.assertTrue(r['timed_out'])
+        self.assertEqual(r['group_stop'], 'failed')
+        self.assertIn('PermissionError', r['group_stop_error'])
+        self.assertIn('started', r['streams']['stdout']['text'])
+        self.assertTrue(r['process_exit_verified'])
+
+    def test_cli_json_escapes_surrogate_filenames(self):
+        output = io.BytesIO()
+        request_path = self.root/'request.json'
+        request_path.write_text('{}')
+        text_stdout = io.TextIOWrapper(output, encoding='utf-8', errors='strict')
+        with patch.object(cli, 'call', return_value=dict(ok=True, outcome='completed',
+                result=dict(entries=[dict(name='bad\udcff', kind='file')]))), \
+             patch.object(cli.sys, 'argv', ['ssh_workspace.py', '--host', 'testbox', '--root', str(self.root), '--request', str(self.root/'request.json')]), \
+             patch.object(cli.sys, 'stdout', text_stdout):
+            self.assertEqual(cli.main(), 0)
+            text_stdout.flush()
+        encoded = output.getvalue()
+        decoded = encoded.decode('utf-8', errors='strict')
+        self.assertIn('\\udcff', decoded)
+        self.assertEqual(json.loads(decoded)['result']['entries'][0]['name'], 'bad\udcff')
+
     def test_transport_unknown(self):
         with patch.object(cli, 'transport', return_value=(subprocess.CompletedProcess([],255,b'',b'connection lost'), {'stdout':0,'stderr':15})):
             self.assertEqual(cli.call('testbox', str(self.root), {'op':'list'})['outcome'], 'unknown')

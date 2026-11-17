@@ -1,7 +1,7 @@
 ---
 name: ssh_workspace
 title: SSH Workspace
-version: 0.2.1
+version: 0.2.2
 license: MIT
 type: instruction
 description: Work directly in an authorized remote POSIX workspace over OpenSSH with bounded reads, search, conflict-checked edits, safe creation, and explicit command outcomes; no project mirror or remote installation.
@@ -28,7 +28,7 @@ python3 ssh_workspace.py --host devbox --root /srv/my-project --request request.
 python3 ssh_workspace.py --host devbox --root /srv/my-project --ssh-config /absolute/private/config < request.json
 ```
 
-`--request` reads a local JSON file; otherwise JSON comes from stdin (use a request file with tools that do not expose stdin). Requests and output are UTF-8 JSON. CLI exit 0 = operation completed, 1 = remote operation error, 2 = transport/protocol outcome UNKNOWN or local input error. For exec, inspect `returncode` and `timed_out`: CLI success is not program success. No automatic retries. SSH stderr is bounded but may contain private paths; keep it private.
+`--request` reads a local JSON file; otherwise JSON comes from stdin (use a request file with tools that do not expose stdin). Requests and output are UTF-8 JSON; the CLI ASCII-escapes non-ASCII values so POSIX filenames containing non-UTF-8 bytes remain valid JSON. CLI exit 0 = operation completed, 1 = remote operation error, 2 = transport/protocol outcome UNKNOWN or local input error. For exec, inspect `returncode` and `timed_out`: CLI success is not program success. No automatic retries. SSH stderr is bounded but may contain private paths; keep it private.
 
 Examples (placeholder paths/host only):
 
@@ -44,9 +44,9 @@ Examples (placeholder paths/host only):
 ```
 
 - All file paths and command cwd are relative to `--root` or absolute inside it. Root must already exist. `list` does not follow symlink entries. `search` is literal, UTF-8 only, skips symlinks and common generated directories. Its scan/file/byte/time bounds and gaps are explicit; incomplete search is NOT absence. Search returns bounded lines and is not AST navigation.
-- `read` returns whole-file SHA256 plus bounded text, byte offsets and `next_byte`; start_line is 1-based. Continue via `offset=next_byte` (byte chunks may split Unicode characters; output uses replacement decoding and reports it). Files can change while reading; revision is not an atomic snapshot. `log-tail` reads only a bounded end window, reports omitted prefix and window bytes; it does not hash a huge log. Use `log-read` for growing logs, without the 64 MiB read/hash limit.
+- `read` returns whole-file SHA256 plus bounded text, byte offsets and `next_byte`; start_line is 1-based. `search` reports the same 1-based LF-delimited lines as `read`; form-feed, bare CR and Unicode line separators do not start new lines. Continue via `offset=next_byte` (byte chunks may split Unicode characters; output uses replacement decoding and reports it). Files can change while reading; revision is not an atomic snapshot. `log-tail` reads only a bounded end window, reports omitted prefix and window bytes; it does not hash a huge log. Use `log-read` for growing logs, without the 64 MiB read/hash limit.
 - `create` exclusively creates a NEW UTF-8 file (0600 default, optional integer `mode`); no overwrite or implicit directories. `patch` handles UTF-8 files up to 2 MiB, checks whole-file SHA256 and the exact nonzero count for every ordered replacement before writing. Returns a bounded diff, new hash and an exclusive recovery backup path. Preserves ordinary mode bits; refuses symlink/hardlink targets. Uses a same-directory temporary file then rename, with a final recheck. No multi-file transaction, no guarantee against an uncooperative writer between recheck/rename. ACLs/xattrs/ownership are not preserved by replacement; use on ordinary user-owned files, not special metadata files. Backups stay remotely until explicitly authorized cleanup; never delete unique results silently.
-- `exec` requires argv, cwd and timeout (1–300 s). To use shell features choose `["sh","-c","..."]` explicitly; prefer an absolute venv interpreter. No persistent shell/PTY, no inherited cd or activate. It drains both streams without unbounded buffering and returns exact byte counts plus bounded prefixes. A remote timeout sends SIGKILL to the started process group and reports the signal attempt, **not proof that every descendant exited**. Daemonized or queued jobs may outlive it. For long experiments use the site's queue, retain job IDs, reconcile state before retry. No built-in queue abstraction.
+- `exec` requires argv, cwd and timeout (1–300 s). To use shell features choose `["sh","-c","..."]` explicitly; prefer an absolute venv interpreter. No persistent shell/PTY, no inherited cd or activate. It drains both streams without unbounded buffering and returns exact byte counts plus bounded prefixes. A remote timeout attempts SIGKILL on the started process group and retains captured output plus the signal outcome. If the signal is denied or the child remains alive after the wait, termination is explicitly unconfirmed; even a confirmed direct-child exit does not prove every descendant exited. Daemonized or queued jobs may outlive it. For long experiments use the site's queue, retain job IDs, reconcile state before retry. No built-in queue abstraction.
 
 ## Reuse the SSH transport (optional)
 
